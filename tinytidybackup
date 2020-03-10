@@ -1,0 +1,182 @@
+#!/bin/bash
+
+# Jayro Alvarez
+# jayroalvarez@csu.fullerton.edu
+# CPSC 254-01
+
+# DETAILS:
+# tinytidybackup is a script to aid in backing up  a directory.
+# Use with option -h (help) to see complete usage.
+
+# Note: I implemented the remote option to be used as follows:
+# ./ttb -r jayroalvarez@ecs.fullerton.edu ./source_dir ./dest_dir
+
+# Usage message to display when script detects no parameters or -h option
+function usage () {
+  echo "Usage:"
+
+  echo "  ${1} source_directory_path destination_directory_path"
+  echo
+  echo "  Include source directory path to know what to back up,"
+  echo "  and destination directory path to know where to back it up."
+  echo "  Script will save a bzipped tar archive of source directory."
+  echo "  Optional options:"
+  echo "    -n) Dry run"
+  echo "    -r) Remote backup, specify SSH style path"
+  echo "    -c) Specify number of backups to retain"
+  echo "    -v) Verbose mode, prints out all steps of script"
+  echo "    -h) Help, print out script usage"
+  echo
+}
+
+#
+# Main
+#
+
+#keep name of script for rest of program run
+SCRIPTNAME=`basename ${0}`
+
+# variables to track status of options
+NUMBACKUPS=0
+REMOTEHOST="NULL"
+REMOTE="NO"
+DRYRUN="NO"
+VERBOSE="NO"
+
+#getopts run:
+args=`getopt nr:c:vh $*`
+
+if [ $? -ne 0 ]; then
+       echo 'Usage: ...'
+       exit 2
+fi
+
+set -- $args
+while :; do
+  case "$1" in
+  -n)
+    DRYRUN="YES"
+    shift;
+    ;;
+  -r)
+    REMOTEHOST=$2
+    REMOTE="YES"
+    shift; shift;
+    ;;
+  -c)
+    NUMBACKUPS=$2;
+    shift; shift;
+    ;;
+  -v)
+    VERBOSE="YES"
+    shift;
+    ;;
+  -h)
+    usage $SCRIPTNAME
+    exit 1;
+    shift;
+    ;;
+  --)
+    shift; break
+    ;;
+  esac
+done
+
+# end of getopts
+
+# if no parameters detected, ,exit with usage message
+if [ ${#} -lt 2 ]; then
+  usage ${SCRIPTNAME}
+  exit 1
+fi
+
+#dry run case:
+if [ ${DRYRUN}"x" = "YESx" ]; then
+  echo "Dryrun mode! Operations to be done (not really done):"
+  echo "-----------------------------------------------------"
+  echo "Start time of backup job: `date +%T`"
+  echo "-----------------------------------------------------"
+  echo "Items from source directory, '`basename $1`', to be backed up:"
+  for file in `ls $1`; do
+    echo $file
+  done
+  echo "-----------------------------------------------------"
+  if [ $REMOTE"x" = "YESx" ]; then
+
+    echo "Backup Destination Directory: '$2'"
+    echo "Destination is accessed by ssh to $REMOTEHOST."
+
+  else
+    echo "Backup Destination Directory: '$2'"
+  fi
+
+  echo "-----------------------------------------------------"
+  DATE=`date +%Y"-"%m"-"%d"-"%H"-"%M"-"`
+  NEWFILENAME=${DATE}`basename $1`.tar.bz2
+  echo "Backup tar achive name: $NEWFILENAME"
+  echo "-----------------------------------------------------"
+  echo "Run again without dryrun enabled to complete actions."
+
+#remote backup case:
+elif [ ${REMOTE}"x" = "YESx" ]; then
+  echo "Start time of backup job: `date +%T`"
+  echo "-----------------------------------------------------"
+  if [ ${VERBOSE}"x" = "YESx" ]; then
+    echo "Script going to send following files by ssh:"
+    for file in `ls $1`; do
+      echo $file
+    done
+  echo "-----------------------------------------------------"
+  fi
+
+  DATE=`date +%Y"-"%m"-"%d"-"%H"-"%M"-"`
+  NEWFILENAME=${DATE}`basename $1`.tar.bz2
+  REMOTE_DEST="$2$NEWFILENAME"
+  tar cjf - $1 | ssh $REMOTEHOST dd of=$REMOTE_DEST
+
+# local backup:
+else
+  echo "Start time of backup job: `date +%T`"
+  echo "-----------------------------------------------------"
+  if [ ${VERBOSE}"x" = "YESx" ]; then
+    echo "Script going to backup following files locally:"
+    for file in `ls $1`; do
+      echo $file
+    done
+  echo "-----------------------------------------------------"
+
+  fi
+  DATE=`date +%Y"-"%m"-"%d"-"%H"-"%M"-"`
+  NEWFILENAME=${DATE}`basename $1`.tar.bz2
+  LOCAL_DEST="$2$NEWFILENAME"
+  tar cjf $LOCAL_DEST $1
+
+  #check if we need to delete backups
+  if [ $NUMBACKUPS -ne 0 ]; then
+    TOTAL_FILES=`ls -1 $2*\`basename $1\`.tar.bz2 | wc -l`
+    NUM_TO_DELETE=$(($TOTAL_FILES - $NUMBACKUPS));
+
+    for file in `ls -1 $2*\`basename $1\`.tar.bz2 | head -$NUM_TO_DELETE`; do
+      rm $file
+    done
+
+    #Helpful functions:
+    # wc -l <textfile> => counts the number of lines in a text file
+    # sed -i '1d' <textfile> deletes
+    # to delete, can also use HEAD/TAIL to delete from beg and appends
+    # <command-name> >> <textfile> => appends command output to the end of file
+
+    #update SHA256SUMS file
+    #first append new file sha256sums
+    SHASUM=($(sha256sum $2$NEWFILENAME))
+    echo $SHASUM | cat >> ${2}SHA256SUMS
+    TOTAL_FILE_COUNT=`ls -1 $2*\`basename $1\`.tar.bz2`
+    TOTAL_LINES=`wc -l ${2}SHA256SUMS | cut -f 1 -d\ `
+    NUM_TO_DELETE=$(($TOTAL_LINES - $NUMBACKUPS))
+    if [ $NUM_TO_DELETE -gt 0 ]; then
+      sed -i "1, ${NUM_TO_DELETE}d" ${2}SHA256SUMS
+    fi
+  fi
+fi
+
+echo "End time of backup job: `date +%T`"
