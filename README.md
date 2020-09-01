@@ -1,5 +1,5 @@
 
-# Tidy Backup Script by Jayro Alvarez
+# Tidy Backup Script
 
 * -n Dry run; A dry run is where the script prints out what it would do, including all the files it would backup, where the files will go, the name of the tar archive, yet does not do any operations that would modify the file system.
 * -r Remote backup; The destination is specified as an SSH style path. The path is specified as `user@remotehost:/fully/qualified/path`. The backup archive shall be sent over the network and stored on the remote host.
